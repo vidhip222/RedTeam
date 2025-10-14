@@ -4,6 +4,9 @@ import json
 import os
 from datetime import datetime
 
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 class ModelClient:
     def __init__(self, provider="mock", api_key=None, sanitize=False):
         self.provider = provider
@@ -22,6 +25,27 @@ class ModelClient:
         with open(self.log_path, "a", encoding="utf8") as f:
             f.write(json.dumps(entry) + "\n")
 
+    def _get_llm(self, temperature, max_tokens):
+        models = {
+            "openai": lambda: ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=1.0,
+                max_tokens=max_tokens,
+                api_key=self.api_key
+            ),
+            "gemini": lambda: ChatGoogleGenerativeAI(
+                model='gemini-2.5-flash',
+                temperature=temperature,
+                max_tokens=max_tokens,
+                google_api_key=self.api_key
+            )
+            # TODO: Add additional llms here
+        }
+        model = models.get(self.provider)
+        if not model:
+            raise ValueError(f"Unkown or unsupported provider: {self.provider}")
+        return model
+
     def sanitize_input(self, prompt):
         if not self.sanitize:
             return prompt, {}
@@ -30,7 +54,7 @@ class ModelClient:
         meta = {"sanitized": True}
         return replaced, meta
 
-    def query(self, attack_id, prompt, max_tokens=200, **kwargs):
+    def query(self, attack_id, prompt, max_tokens=200, temperature=1.0, **kwargs):
         if self.sanitize:
             prompt, smeta = self.sanitize_input(prompt)
         else:
@@ -41,24 +65,13 @@ class ModelClient:
             meta = {"mock": True}
             self._log(attack_id, prompt, meta)
             return {"text": resp, "meta": meta}
-        elif self.provider == "openai":
-            # Minimal HTTP wrapper (placeholder) - requires API key
-            if not self.api_key:
-                raise RuntimeError("OpenAI provider requested but no API key provided.")
-            import requests
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-            payload = {
-                "model": kwargs.get("model", "gpt-4o-mini"),
-                "messages": [{"role":"user", "content": prompt}],
-                "max_tokens": max_tokens
-            }
-            r = requests.post(url, json=payload, headers=headers, timeout=20)
-            r.raise_for_status()
-            j = r.json()
-            text = j["choices"][0]["message"]["content"]
-            meta = {"mock": False, "provider": "openai"}
-            self._log(attack_id, prompt, meta)
-            return {"text": text, "meta": meta}
-        else:
-            raise ValueError("Unknown provider: " + str(self.provider))
+    
+        if not self.api_key:
+            raise RuntimeError(f"{self.provider} provider requested but no API key provided")
+
+        llm = self._get_llm(temperature=temperature, max_tokens=max_tokens)
+        response = llm.invoke(prompt)
+        text = response.content
+        meta = {"mock": False, "provider": self.provider}
+        self._log(attack_id, prompt, meta)
+        return {"text": text, "meta": meta}
