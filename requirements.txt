@@ -3,3 +3,5 @@ requests>=2.25
 pytest>=7.0
 langchain-openai>=0.3.35
 langchain-google-genai>=2.1.12
+langchain
+langchain-community
