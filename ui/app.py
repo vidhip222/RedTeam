@@ -48,7 +48,11 @@ def load_scores(path):
         return []
     try:
         with open(path, "r", encoding="utf8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # Handle both direct array and nested structure
+            if isinstance(data, dict) and "scores" in data:
+                return data["scores"]
+            return data if isinstance(data, list) else []
     except Exception:
         return []
 
@@ -65,7 +69,7 @@ if results:
         aid = r.get("attack_id", "")
         prompt_snip = (r.get("prompt") or "")[:80].replace("\n", " ")
         score = score_map.get(aid)
-        vuln = score.get("vuln_bool") if score else None
+        vuln = score.get("vulnerable") if score else None
         rows.append({"attack_id": aid, "prompt": prompt_snip, "vuln": vuln})
     st.table(rows)
 
